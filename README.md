@@ -1,5 +1,9 @@
 # HundEvelisExtreme
 
+![C++-17-00599C](https://github.com/user-attachments/assets/12e61793-f8cd-40ec-9954-6dcf4b258c91)
+![License-MIT-yellow](https://github.com/user-attachments/assets/9f04bb89-78df-488f-8d09-b6ee5e00ceaf)
+![Version-2](https://github.com/user-attachments/assets/4bbfd4e7-2cd6-4073-88e5-f4e780552968)
+
 **Мощный консольный инструмент для сетевого анализа и системных операций**
 
 ## 📋 О проекте
@@ -18,6 +22,3 @@ HundEvelisExtreme — продвинутый консольный инструм
 1. Перейдите в раздел [Releases](https://github.com/alcYTOrig/HundEvelisExtreme/releases)
 2. Скачайте последнюю версию `HundEvelisExtreme.exe`
 3. Запустите файл
-
-## 🚀 Использование
-### Запуск программы:
