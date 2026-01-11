@@ -1,7 +1,3 @@
-//
-// Created by ALC on 20.12.2025.
-//
-
 #pragma once
 #include <iostream>
 #include <vector>
@@ -18,22 +14,222 @@ class NetworkTools {
 private:
     mutex cout_mutex;
     vector<int> open_ports;
-public:
-    NetworkTools(vector<string> args) {
-        int vector_sum = 0;
-        for (const auto& el : args) {
-            vector_sum++;
+
+    static bool winsockInitialized;
+    static mutex winsockMutex;
+
+    static void initWinsock() {
+        lock_guard<mutex> lock(winsockMutex);
+        if (!winsockInitialized) {
+            WSADATA wsaData;
+            int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+            if (result != 0) {
+                cerr << "WSAStartup failed with error: " << result << endl;
+                throw runtime_error("Winsock initialization failed");
+            }
+            winsockInitialized = true;
         }
-        if (vector_sum != 4 && vector_sum != 3) {
-            cout << "\033[1;31mНе указаны нужные аргументы!\033[0m" << endl;
+    }
+
+public:
+    // Конструктор без аргументов для тестирования
+    NetworkTools() {
+        initWinsock();
+        cout << "[\033" << endl;
+    }
+
+    // Конструктор с аргументами (старый)
+    explicit NetworkTools(vector<string> args) {
+        initWinsock();
+
+        if (args.empty()) {
+            cout << "\x1b[1;31mОшибка: нет аргументов. \x1b[0mИспользуйте:" << endl;
+            cout << "  gip <hostname>" << endl;
+            cout << "  poc <ip> <start> <end> [-rf]" << endl;
+            return;
+        }
+
+        if (args[0] == "PortOpenCheck" || args[0] == "poc") {
+            if (args.size() < 4) {
+                cout << "\x1b[1;31mОшибка: для poc нужно указать IP, начальный и конечный порт" << endl;
+                return;
+            }
+            portcheck(args);
+        }
+        else if (args[0] == "GetIPInURL" || args[0] == "gip") {
+            if (args.size() < 2) {
+                cout << "\x1b[1;31mОшибка: для gip нужно указать хостнейм" << endl;
+                return;
+            }
+            gip(args);
         }
         else {
-            if (vector_sum == 3) {
-                check_last(args[0], args[1], args[2]);
+            cout << "\x1b[1;31mНеизвестная команда: " << args[0] << endl;
+        }
+    }
+
+    // Метод для выполнения команд из интерактивного режима
+    void executeCommand(const string& command) {
+        vector<string> args;
+        string token;
+        size_t start = 0, end = 0;
+
+        // Разбиваем строку на аргументы
+        while ((end = command.find(' ', start)) != string::npos) {
+            token = command.substr(start, end - start);
+            if (!token.empty()) args.push_back(token);
+            start = end + 1;
+        }
+        token = command.substr(start);
+        if (!token.empty()) args.push_back(token);
+
+        if (args.empty()) {
+            cout << "Введите команду (gip или poc)" << endl;
+            return;
+        }
+
+        if (args[0] == "poc" || args[0] == "PortOpenCheck") {
+            if (args.size() < 4) {
+                cout << "Использование: poc <IP> <начальный_порт> <конечный_порт> [-rf]" << endl;
+                cout << "Пример: poc 127.0.0.1 1 100" << endl;
+                return;
             }
-            if (vector_sum == 4) {
-                check_last(args[0], args[1], args[2], args[3]);
+            portcheck(args);
+        }
+        else if (args[0] == "gip" || args[0] == "GetIPInURL") {
+            if (args.size() < 2) {
+                cout << "Использование: gip <хостнейм>" << endl;
+                cout << "Пример: gip google.com" << endl;
+                return;
             }
+            gip(args);
+        }
+        else if (args[0] == "help") {
+            showHelp();
+        }
+        else {
+            cout << "Неизвестная команда: " << args[0] << endl;
+            showHelp();
+        }
+    }
+
+    static void showHelp() {
+        cout << "Доступные команды:" << endl;
+        cout << "  gip <hostname>              - получить IP-адреса хоста" << endl;
+        cout << "  poc <ip> <start> <end> [-rf] - сканировать порты" << endl;
+        cout << "    -rf - показывать только открытые порты" << endl;
+        cout << "  help                        - показать эту справку" << endl;
+        cout << "  exit                        - выйти" << endl;
+    }
+
+    // В класс NetworkTools добавьте этот метод:
+    void executeCommandFromArgs(const vector<string>& args) {
+        if (args.empty()) {
+            showHelp();
+            return;
+        }
+
+        if (args[0] == "gip" || args[0] == "GetIPInURL") {
+            if (args.size() < 2) {
+                cout << "Использование: gip <хостнейм>" << endl;
+                return;
+            }
+            gip(args);
+        }
+        else if (args[0] == "poc" || args[0] == "PortOpenCheck") {
+            if (args.size() < 4) {
+                cout << "Использование: poc <IP> <начальный_порт> <конечный_порт> [-rf]" << endl;
+                return;
+            }
+            portcheck(args);
+        }
+        else {
+            cout << "Неизвестная команда: " << args[0] << endl;
+            showHelp();
+        }
+    }
+
+    static void gip(vector<string> args) {
+        initWinsock();
+
+        if (args.size() < 2) {
+            cerr << "Usage: gip <hostname>" << endl;
+            return;
+        }
+
+        const std::string& hostnameStr = args[1];
+        const char* hostname = hostnameStr.c_str();
+
+        std::cout << "Смотрим IP-адреса: " << hostnameStr << std::endl;
+
+        struct addrinfo hints{}, *result = nullptr, *rp;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_flags = AI_CANONNAME;
+
+        int status = getaddrinfo(hostname, nullptr, &hints, &result);
+        if (status != 0) {
+            std::cerr << "Ошибка: " << gai_strerror(status) << std::endl;
+            return;
+        }
+
+        std::vector<std::string> ipv4Addresses;
+        std::vector<std::string> ipv6Addresses;
+
+        for (rp = result; rp != nullptr; rp = rp->ai_next) {
+            char ip_str[INET6_ADDRSTRLEN];
+            void* addr;
+
+            if (rp->ai_family == AF_INET) {
+                auto* ipv4 = (struct sockaddr_in*)rp->ai_addr;
+                addr = &(ipv4->sin_addr);
+                inet_ntop(AF_INET, addr, ip_str, sizeof(ip_str));
+                ipv4Addresses.emplace_back(ip_str);
+            } else if (rp->ai_family == AF_INET6) {
+                auto* ipv6 = (struct sockaddr_in6*)rp->ai_addr;
+                addr = &(ipv6->sin6_addr);
+                inet_ntop(AF_INET6, addr, ip_str, sizeof(ip_str));
+                ipv6Addresses.emplace_back(ip_str);
+            }
+        }
+
+        if (!ipv4Addresses.empty()) {
+            std::cout << "\nIPv4 адреса:" << std::endl;
+            for (const auto& ip : ipv4Addresses) {
+                std::cout << "  " << ip << std::endl;
+            }
+        }
+
+        if (!ipv6Addresses.empty()) {
+            std::cout << "\nIPv6 адреса:" << std::endl;
+            for (const auto& ip : ipv6Addresses) {
+                std::cout << "  " << ip << std::endl;
+            }
+        }
+
+        if (ipv4Addresses.empty() && ipv6Addresses.empty()) {
+            std::cout << "IP-адреса не найдены" << std::endl;
+        } else {
+            std::cout << "\nНайдено адресов: "
+                      << (ipv4Addresses.size() + ipv6Addresses.size())
+                      << std::endl;
+        }
+
+        freeaddrinfo(result);
+    }
+
+    void portcheck(vector<string> args) {
+        if (args.size() != 4 && args.size() != 5) {
+            cout << "Использование: poc <IP> <начальный_порт> <конечный_порт> [-rf]" << endl;
+            cout << "  -rf - не показывать закрытые порты (опционально)" << endl;
+            return;
+        }
+
+        if (args.size() == 4) {
+            check_last(args[1], args[2], args[3]);
+        } else if (args.size() == 5) {
+            check_last(args[1], args[2], args[3], args[4]);
         }
     }
 
@@ -41,36 +237,51 @@ public:
         int really_port_start;
         int really_port_end;
         bool close_port_cout;
-        if (port_start == "*") {
-            really_port_start = 1;
+
+        try {
+            if (port_start == "*") {
+                really_port_start = 1;
+            } else {
+                really_port_start = stoi(port_start);
+                if (really_port_start < 1 || really_port_start > 65535) {
+                    throw out_of_range("Порт должен быть от 1 до 65535");
+                }
+            }
+
+            if (port_end == "*") {
+                really_port_end = 65535;
+            } else {
+                really_port_end = stoi(port_end);
+                if (really_port_end < 1 || really_port_end > 65535) {
+                    throw out_of_range("Порт должен быть от 1 до 65535");
+                }
+            }
+
+            if (really_port_start > really_port_end) {
+                swap(really_port_start, really_port_end);
+            }
+
+            if (arg == "-rf") {
+                close_port_cout = false;
+            } else {
+                close_port_cout = true;
+            }
+
+            scan_range(ip, really_port_start, really_port_end, close_port_cout);
+
+        } catch (const invalid_argument& e) {
+            cerr << "Ошибка: неверный формат порта" << endl;
+        } catch (const out_of_range& e) {
+            cerr << "\033[1;31mОшибка\033[0m" << endl;
         }
-        else {
-            really_port_start = stoi(port_start);
-        }
-        if (port_end == "*") {
-            really_port_end = 65535;
-        }
-        else {
-            really_port_end = stoi(port_end);
-        }
-        if (arg == "-rf") {
-            close_port_cout = false;
-        }
-        else {
-            close_port_cout = true;
-        }
-        scan_range(ip, really_port_start, really_port_end, close_port_cout);
     }
 
-    bool connect_to_port(const string& ip, int port, int timeout_ms = 1000) {
-        WSADATA wsaData;
-        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-            return false;
-        }
+    static bool connect_to_port(const string& ip, int port, int timeout_ms = 1000) {
+        initWinsock();
 
         SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (sock == INVALID_SOCKET) {
-            WSACleanup();
+            cerr << "\033[1;31mОшибка создания сокета: " << WSAGetLastError() << "\033[0m" << endl;
             return false;
         }
 
@@ -78,23 +289,32 @@ public:
         u_long mode = 1;
         ioctlsocket(sock, FIONBIO, &mode);
 
-        sockaddr_in addr;
+        sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_port = htons(port);
-        inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
 
-        connect(sock, (sockaddr*)&addr, sizeof(addr));
+        // Преобразуем IP-адрес
+        if (inet_pton(AF_INET, ip.c_str(), &addr.sin_addr) != 1) {
+            cerr << "\033[1;31mОшибка: неверный IP-адрес\033[0m" << endl;
+            closesocket(sock);
+            return false;
+        }
+
+        int a = connect(sock, (sockaddr*)&addr, sizeof(addr));
+        if (a == 0) {
+            cout << "\033[33mConnect Warning...\033[0m" << endl;
+        }
 
         fd_set fdset;
         FD_ZERO(&fdset);
         FD_SET(sock, &fdset);
 
-        timeval tv;
+        timeval tv{};
         tv.tv_sec = timeout_ms / 1000;
         tv.tv_usec = (timeout_ms % 1000) * 1000;
 
         bool connected = false;
-        if (select(0, NULL, &fdset, NULL, &tv) > 0) {
+        if (select(0, nullptr, &fdset, nullptr, &tv) > 0) {
             int so_error;
             socklen_t len = sizeof(so_error);
             getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&so_error, &len);
@@ -102,29 +322,36 @@ public:
         }
 
         closesocket(sock);
-        WSACleanup();
         return connected;
     }
 
     void scan_port(const string& ip, int port, bool scp) {
-        bool is_open = connect_to_port(ip, port);
+        try {
+            bool is_open = connect_to_port(ip, port);
 
-        std::lock_guard<std::mutex> lock(cout_mutex); // Всегда блокируем мьютекс
+            lock_guard<mutex> lock(cout_mutex);
 
-        if (is_open) {
-            std::cout << "\033[1;32mПорт " << port << " открыт\033[0m" << std::endl;
-            open_ports.push_back(port);
-        } else {
-            if (scp)
-                std::cout << "\033[31mПорт " << port << " закрыт\033[0m" << std::endl;
+            if (is_open) {
+                cout << "\033[1;32mПорт " << port << " открыт\033[0m" << endl;
+                open_ports.push_back(port);
+            } else if (scp) {
+                cout << "\033[31mПорт " << port << " закрыт\033[0m" << endl;
+            }
+        } catch (const exception& e) {
+            lock_guard<mutex> lock(cout_mutex);
+            cerr << "Ошибка при сканировании порта " << port << ": " << e.what() << endl;
         }
     }
 
     void scan_range(const std::string& ip, int start_port, int end_port, bool show_close_ports, int max_threads = 100) {
-        std::cout << "Сканирование " << ip << " с порта " << start_port << " по " << end_port << "...\n";
+        cout << "Сканирование " << ip << " с порта " << start_port << " по " << end_port << "..." << endl;
 
-        std::vector<std::thread> threads;
+        open_ports.clear(); // Очищаем предыдущие результаты
+
+        vector<thread> threads;
         int current_port = start_port;
+        int total_ports = end_port - start_port + 1;
+        int ports_scanned = 0;
 
         while (current_port <= end_port) {
             while (threads.size() < max_threads && current_port <= end_port) {
@@ -132,29 +359,36 @@ public:
                     this->scan_port(ip, current_port, show_close_ports);
                 });
                 current_port++;
+                ports_scanned++;
+
+                // Показываем прогресс каждые 1000 портов
+                if (ports_scanned % 1000 == 0) {
+                    cout << "Прогресс: " << ports_scanned << "/" << total_ports << " портов..." << endl;
+                }
             }
 
             for (auto& t : threads) {
-                t.join();
+                if (t.joinable()) {
+                    t.join();
+                }
             }
             threads.clear();
         }
 
-        std::cout << "Сканирование завершено.\n" << endl;
-        bool open_port = false;
-        for (const int& port : open_ports) {
-            open_port = true;
-            break;
-        }
-        if (open_port) {
-            std::cout << "Открытые порты: " << endl;
-            for (const int& port : open_ports) {
-                cout << "\033[32mПорт: " << port << endl;
+        cout << "\nСканирование завершено." << endl;
+
+        if (!open_ports.empty()) {
+            cout << "\nОткрытые порты (" << open_ports.size() << "):" << endl;
+            sort(open_ports.begin(), open_ports.end());
+            for (int port : open_ports) {
+                cout << "  \033[32mПорт: " << port << "\033[0m" << endl;
             }
-            cout << "\033[0m";
-        }
-        else {
-            cout << "\033[1;32mОткрытые порты не обнаружены!\033[0m";
+        } else {
+            cout << "\033[1;33mОткрытые порты не обнаружены!\033[0m" << endl;
         }
     }
 };
+
+// Инициализация статических переменных
+bool NetworkTools::winsockInitialized = false;
+mutex NetworkTools::winsockMutex;
