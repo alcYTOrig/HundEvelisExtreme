@@ -15,7 +15,7 @@
 #include <chrono>
 #include <future>
 
-#include "modules/network.h"
+#include "network.h"
 
 using namespace std;
 
@@ -51,7 +51,7 @@ public:
     }
 
     static void print_of_console(char access, const string& text) {
-            cout << "[\033[1;31m" << access << "\033[0m]" << " \033[4;35m" << text << "\033[0m";
+        cout << "[\033[1;31m" << access << "\033[0m]" << " \033[4;35m" << text << "\033[0m";
     }
 
     int process_checker() {
@@ -91,7 +91,7 @@ public:
 
     static void print_welcome_text() {
         cout << "\x1b[1;32mAmore \033[1;34mHundEvelis\033[0m\033[1;31mExtreme\033[0m | \033[1;34mWELCOME BACK\033[0m\n";
-        cout << "\x1b[1;34mAlpha \x1b[0m\x1b[1mV2.0\x1b[0m" << endl << endl << endl;
+        cout << "\x1b[1;34mAlpha \x1b[0m\x1b[1mV2.2\x1b[0m" << endl << endl << endl;
     }
 
     static void cls() {
@@ -306,8 +306,14 @@ public:
                     }
                 }
                 else if (cmd == "shut") {
-                    system("shutdown /s");
-                    cout << "Shutdown!" << endl;
+                    if (args.empty()) {
+                        system("shutdown /s /t 5");
+                        cout << "Shutdown!" << endl;
+                    }
+                    else if (args[0] == "-r") {
+                        system("shutdown /r /t 5");
+                        cout << "Restart!" << endl;
+                    }
                 }
                 else if (cmd == "c") {
                     system("shutdown /a");

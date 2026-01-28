@@ -1,20 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
 project(HundEvelisExtreme)
 
-set(CMAKE_CXX_STANDARD 23)
-
-# Разрешить множественные определения
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--allow-multiple-definition")
+set(CMAKE_CXX_STANDARD 17)
 
 add_executable(HundEvelisExtreme main.cpp)
 
-# Сначала статические библиотеки
-target_link_options(HundEvelisExtreme PRIVATE
-        "-static-libstdc++"
-        "-static-libgcc"
-)
+# Для Windows
+if(WIN32)
+    target_compile_definitions(HundEvelisExtreme PRIVATE _WIN32_WINNT=0x0600)
+endif()
 
-# Затем системные библиотеки (каждая по одному разу!)
-target_link_libraries(HundEvelisExtreme
-        ws2_32
-)
+# Статическая линковка для MinGW
+if(MINGW)
+    target_link_options(HundEvelisExtreme PRIVATE
+            -static
+            -static-libgcc
+            -static-libstdc++
+    )
+endif()
+
+target_link_libraries(HundEvelisExtreme ws2_32)
